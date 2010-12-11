@@ -1,0 +1,11 @@
+content  browseraccess chrome/content/
+
+interfaces components/nsIHttpServer.xpt
+interfaces components/nsIHttpServerWrapper.xpt
+
+component {54ef6f81-30af-4b1d-ac55-8ba811293e41} components/httpd.js
+contract @mozilla.org/server/jshttp;1 {54ef6f81-30af-4b1d-ac55-8ba811293e41}
+
+component {71ecfba5-15cf-457f-9642-4b33f6e9baf5} components/httpdwrapper.js
+contract @fer/httpserver;1 {71ecfba5-15cf-457f-9642-4b33f6e9baf5}
+category JavaScript-global-property HttpServer @fer/httpserver;1

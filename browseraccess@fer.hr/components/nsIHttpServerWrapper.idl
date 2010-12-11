@@ -1,0 +1,52 @@
+#include "nsISupports.idl"
+#include "nsIHttpServer.idl"
+#include "nsIDOMWindow.idl"
+
+interface nsIHttpServerWrapper;
+interface nsIHttpRequestHandlerWrapper;
+interface nsIHttpRequestWrapper;
+interface nsIHttpResponseWrapper;
+
+[scriptable, uuid(e319d8d3-359d-466d-825f-29958a0fa85a)]
+interface nsIHttpServerWrapper : nsISupports {
+	readonly attribute boolean running;
+
+	boolean requestUsage(in nsIDOMWindow window);
+	boolean unrequestUsage(in nsIDOMWindow window);
+
+	string registerPathHandler(in nsIDOMWindow window, in string path, in nsIHttpRequestHandlerWrapper handler);
+	boolean unregisterPathHandler(in nsIDOMWindow window, in string path);
+
+	string registerApplication(in nsIDOMWindow window, in string appName, in nsIHttpRequestHandlerWrapper app);
+	boolean unregisterApplication(in nsIDOMWindow window, in string appName);
+};
+
+[scriptable, function, uuid(b6b7458a-fa22-11df-89c3-eba7dfd72085)]
+interface nsIHttpRequestHandlerWrapper : nsISupports {
+	void handle(in nsIHttpRequestWrapper request, in nsIHttpResponseWrapper response);
+};
+
+[scriptable, uuid(c6f11de0-fa22-11df-a4cb-1da8dfd72085)]
+interface nsIHttpRequestWrapper : nsISupports {
+	readonly attribute string bodyText;
+	readonly attribute string url;
+	readonly attribute string version;
+	readonly attribute string method;
+	readonly attribute string queryString;
+
+	string getHeader(in string key);
+
+	void initWrappedJSObject();
+};
+
+[scriptable, uuid(cee052f0-fa22-11df-91c3-22a8dfd72085)]
+interface nsIHttpResponseWrapper : nsISupports {
+	attribute string bodyText;
+	attribute unsigned short status;
+
+	void setHeader(in string key, in string value, in boolean merge);
+	void send();
+
+	void initWrappedJSObject();
+};
+
