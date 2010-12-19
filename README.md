@@ -117,7 +117,7 @@ The library produces a JavaScript object named *BrowserAccess*. Initially, *Brow
 Library also defines a helper class for application definition. The class is named *Appication*. Public API for this class consists of only one member function named *addResource*. This function can be used to register path handlers to the application. The difference between these path handlers, and the ones that can be registered directly to the server is in path mapping. In the server, handlers are mapped to paths one to one. This means that one handler can handle only the requests sent to a specific path. In the application class, path can represent a subspace of the servers uri addressing space. For example, handler registered to path */path/\** handles not only the requests sent to */path/\**, but also requests sent to */path/a*, */path/b*, */path/c/aaa*, and so on. This concept is borrowed from javax.servlet containers. More details can be found on the [Jetty project Web site](http://account.pacip.com/jetty/doc/PathMapping.html).
 
 ##Example application
-A simple demo application can be found [here](https://github.com/tomek22/BrowserAccess/blob/master/html/demo.html)
+A simple demo application can be found [here](test / html_content/index.html)
 Even though this demo is pretty simple, here's an example of an even simpler application:
 
 	<!doctype html>
