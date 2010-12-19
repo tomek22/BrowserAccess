@@ -1,0 +1,139 @@
+<!doctype html>
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+	<meta http-equiv="content-style-type" content="text/css" />
+	<title>Browser Access demonstration</title>
+	<script type="text/javascript" src="lib/browser_access_library.js"></script>
+	<script type="text/javascript" src="http://localhost:8080/prototype-1.6.1.js"></script>
+	<script type="text/javascript" src="http://localhost:8080/reverse_http_client.js"></script>
+	<script type="text/javascript" src="lib/reverse_http_client_adapter.js"></script>
+	<script type="text/javascript">
+		BrowserAccess.init();
+		
+		var app = new Application(function(request, response) {
+			response.bodyText = 'Demo site default response';
+			response.setHeader('Content-Length', response.bodyText.
+					length, false);
+			response.send();
+		});
+		
+		BrowserAccess.registerApplication('app');
+
+		function updateServerStatus() {
+			$('serverStatus').innerHTML = BrowserAccess.type;
+		}
+		
+		function addResource(path, resource) {
+			var url = app.addResource(path, resource);
+			$('serverStatus').innerHTML += '<br />' + ((url != null) ?
+					('Resource successfully added! link: '
+					+ '<a href=\'' + url + '\'>' + url + '</a>') :
+					'Resource failed to add...');
+		}
+		
+		function registerApplication(appName) {
+			BrowserAccess.registerApplication(appName, app, {
+				onRegister: function(url) {
+					$('serverStatus').innerHTML += '<br />' + ((url != null) ?
+							('Application successfully registered! link: '
+							+ '<a href=\'' + url + '\'>' + url + '</a>') :
+							'Application failed to register...');
+				}
+			});
+		}
+
+		function setRevHttpDebug() {
+			if (BrowserAccess.type === AccessType.REVERSE_HTTP && BrowserAccess.hasOwnProperty('addEventListener')) {
+				var socketInfo = document.createElement('div');
+				socketInfo.id = 'socketInfo';
+				document.body.appendChild(socketInfo);
+				
+				var div = document.createElement('div');
+				div.id = 'progress';
+				var p = document.createElement('p');
+				p.innerHTML = ' ReverseHttp progress:';
+				socketInfo.appendChild(p);
+				socketInfo.appendChild(div);
+				div = document.createElement('div');
+				div.id = 'received';
+				p = document.createElement('p');
+				p.innerHTML = ' WebSocket received data:';
+				socketInfo.appendChild(p);
+				socketInfo.appendChild(div);
+				div = document.createElement('div');
+				div.id = 'sent';
+				p = document.createElement('p');
+				p.innerHTML = ' WebSocket sent data:';
+				socketInfo.appendChild(p);
+				socketInfo.appendChild(div);
+				div = document.createElement('div');
+				div.id = 'error';
+				p = document.createElement('p');
+				p.innerHTML = ' ReverseHttp errors:';
+				socketInfo.appendChild(p);
+				socketInfo.appendChild(div);
+				
+				function print(elemId, msg) {
+					$(elemId).innerHTML += msg + '<br /\>\n';
+				}
+				
+				BrowserAccess.addEventListener('socketopen', function(event) {
+						print('progress', 'WebSocket opened!');
+					}, false);
+					
+				BrowserAccess.addEventListener('socketclose', function(event) {
+						print('progress', 'WebSocket closed!');
+					}, false);
+					
+				BrowserAccess.addEventListener('socketmessage', function(event) {
+						print('received', event.data);
+					}, false);
+					
+				BrowserAccess.addEventListener('error', function(event) {
+						print('error', event.data);
+					}, false);
+					
+				BrowserAccess.addEventListener('sent', function(event) {
+						print('sent', event.data);
+					}, false);
+			}
+		}
+	</script>
+	<style>
+		div {
+			border-width: 1px;
+			border-style: solid;
+			border-color: black;
+			margin: 10px;
+		}
+		textarea {
+			width: 600px;
+			height: 100px;
+		}
+	</style>
+</head>
+<body onload="updateServerStatus();setRevHttpDebug();">
+	<div id="serverInfo">
+		<div id="serverStatus"></div>
+		<div id="serverHostProcedure">
+			Application Name:<input type="text" id="appName" value="app" />
+			<button onclick="registerApplication($('appName').value)">Register Application</button><br />
+			Resource name:<input type="text" id="resourceName" value="resource" /><br />
+			code:<br/>
+			function handler(request, response) {<br />
+			<textarea id="procedure">
+$("serverStatus").innerHTML += "<br />Received request of method <b>" + request.method + "</b> on url <b>" + request.url + ", queryString = " + request.queryString + "</b>";
+$("serverStatus").innerHTML += "<br /> Request sender agent: <b>" + request.headers["user-agent"] + "</b>";
+$("serverStatus").innerHTML += "<br /> Request body: <b>" + request.bodyText + "</b>";
+response.bodyText = "This is some response text...";
+response.headers["SomeHeader"] = "SomeValue";
+response.send();
+			</textarea><br />}<br />
+			<button onclick="addResource($('resourceName').value, 
+					new Function('request', 'response', $('procedure').
+					value))">Add Resource</button>
+		</div>
+	</div>
+</body>
+</html>

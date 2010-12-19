@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+<meta http-equiv="content-style-type" content="text/css" />
+<title>ReverseHTTP test</title>
+<script type="text/javascript" src="prototype-1.6.1.js"></script>
+<script type="text/javascript" src="reverse_http_client.js"></script>
+<script type="text/javascript">
+	function print(elemId, msg) {
+		$(elemId).innerHTML += msg + '<br /\>\n';
+	}
+	
+	const DEBUG = true;
+	const wsurl = 'ws://localhost:8080';
+
+	function app(request, response) {
+		response.body = 'WAZZUUUUUUP!';
+		response.headers['Content-Length'] = response.body.length;
+
+		if (request.method.toUpperCase() === 'OPTIONS') {
+			response.headers['Access-Control-Allow-Methods'] = 'POST, GET, OPTIONS';
+			response.headers['Access-Control-Max-Age'] = 1728000;
+			delete response.body;
+			response.headers['Content-Length'] = 0;
+		}
+		if (request.headers.hasOwnProperty('Access-Control-Request-Headers'))
+			response.headers['Access-Control-Allow-Headers'] = request.headers['Access-Control-Request-Headers'];
+		response.headers['Access-Control-Allow-Origin'] = '*';
+			
+		response.send();
+	}
+
+	var gateway;
+	try {
+		gateway = new ReverseHTTP(wsurl);
+	} catch(e) {
+		gateway = null;
+	}
+	
+	if (gateway != null && DEBUG) {
+		gateway.addEventListener('socketopen', function(event) {
+				print('progress', 'WebSocket opened!');
+			}, false);
+			
+		gateway.addEventListener('socketclose', function(event) {
+				print('progress', 'WebSocket closed!');
+			}, false);
+			
+		gateway.addEventListener('socketmessage', function(event) {
+				print('received', event.data);
+			}, false);
+			
+		gateway.addEventListener('error', function(event) {
+				print('error', event.data);
+			}, false);
+			
+		gateway.addEventListener('sent', function(event) {
+				print('sent', event.data);
+			}, false);
+			
+		gateway.addEventListener('request', function(event) {
+				$('requestURL').value = event.data;
+			}, false);
+	}
+</script>
+</head>
+<body onload="if(gateway == null) { var table = document.getElementsByTagName('table')[0]; var p = document.createElement('p'); p.innerHTML = 'WebSockets not supported!'; document.body.insertBefore(p, table); document.body.removeChild(table); }">
+
+<table cellspacing="0" cellpadding="10" border="1" width="100%">
+	<tr>
+		<th align="left">
+			HOST SIDE:
+		</th>
+		<th align="left">
+			CLIENT SIDE:
+		</th>
+	</tr>
+	<tr valign="top">
+		<td width="300">
+			<p>
+				<label>application name: </label>
+				<input id="appname" size="10" type="text" value="app" />
+				<button onclick="javascript:gateway.register($('appname').value);">REGISTER</button>
+				<button onclick="javascript:gateway.unregister($('appname').value);">UNREGISTER</button>
+			</p>
+			<p>
+				<button onclick="javascript:gateway.request(app);">REQUEST</button>
+				<button onclick="javascript:gateway.unrequest(app);">UNREQUEST</button>
+			</p>
+		</td>
+		<td>
+			<p>
+				<label>request URL: </label>
+				<input size="60" id="requestURL" type="text" />
+				<button onclick="javascript:new Ajax.Request($('requestURL').value, {
+					method:'get',
+					onComplete: function(transport){
+						$('responseContent').innerHTML = transport.responseText;
+					}
+				});">
+					GET
+				</button>
+			</p>
+			<p><label>Response content: </label><div id="responseContent" style="border: 3px black solid;"></div></p>
+		</td>
+	<tr>
+		<td>
+			<label>progress: </label><div id="progress" style="border: 3px coral solid;"></div>
+			<label>received: </label><div id="received" style="border: 3px coral solid;"></div>
+			<label>sent: </label><div id="sent" style="border: 3px coral solid;"></div>
+			<label>error: </label><div id="error" style="border: 3px coral solid;"></div>
+		</td>
+	</tr>
+</table>
+</body>
+</html>
+
