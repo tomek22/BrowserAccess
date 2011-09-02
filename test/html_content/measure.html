@@ -1,0 +1,385 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Browser Access measurement site</title>
+        <script type="text/javascript" src="https://www.google.com/jsapi">
+        </script>
+        <script type="text/javascript" src="lib/browser_access_library.js">
+        </script>
+        <script type="text/javascript" src="prototype-1.6.1.js">
+        </script>
+        <script type="text/javascript" src="http://localhost:8080/reverse_http_client.js">
+        </script>
+        <script type="text/javascript" src="lib/reverse_http_client_adapter.js">
+        </script>
+        <script type="text/javascript">
+			google.load("visualization", "1", {packages:["corechart"]});
+			Array.prototype.avg = function() {
+				var av = 0;
+				var cnt = 0;
+				var len = this.length;
+				for (var i = 0; i < len; i++) {
+					var e = +this[i];
+					if(!e && this[i] !== 0 && this[i] !== '0') {
+						e--;
+					}
+					if (this[i] == e) {
+						av += e; cnt++;
+					}
+				}
+				return av/cnt;
+			}
+
+            var browserAccessExt = new BrowserAccess(false);
+            var browserAccessRevHTTP = new BrowserAccess(true);
+			
+			function StringBuilder() {
+				this.strings = new Array('');
+			}
+			
+			StringBuilder.prototype = {
+				append: function(value) {
+					this.strings.push(value);
+				},
+				toString: function() {
+					return this.strings.join('');
+				}
+			};
+            
+            var transferData = {
+                data: '',
+                length: 10,
+                init: function(length) {
+                    var chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXTZabcdefghiklmnopqrstuvwxyz";
+                    this.length = typeof(length) != 'undefined' ? length : 10;
+					var sb = new StringBuilder();
+                    for (var i = 0; i < this.length; i++) {
+                        var l = Math.floor(Math.random() * chars.length);
+                        sb.append(chars[l >= chars.length ? chars.length - 1 : l]);
+                    }
+					this.data = sb.toString();
+                }
+            };
+            
+			var app = new Application(function(request, response) {
+				response.bodyText = transferData.data;
+				response.headers['Content-Length'] = response.bodyText.length;
+				response.send();
+			});
+
+			var uris = new Array();
+			var revHttpWorking = false;
+			
+			var controlHandlers = {
+				'echo': function(msg) {
+					return msg === '' ? "default echo" : msg;
+				},
+				
+				'ready': function(msg) {
+					if (browserAccessExt.type === AccessType.SERVER_EXTENSION && browserAccessRevHTTP.type === AccessType.REVERSE_HTTP && revHttpWorking) {
+						$('status').innerHTML += 'Ready to start tests...<br \>';
+						return 'true';
+					}
+					else {
+						return 'false';
+					}
+				},
+				
+				'set-response-size': function(msg) {
+					$('status').innerHTML += 'Generating a ' + msg + ' bytes long response message<br \>';
+					transferData.init(msg);
+					$('status').innerHTML += 'Response message generated...<br \>';
+					return 'Response message of size ' + transferData.length + ' generated';
+				}
+			};
+
+			controlHandlers.exec = function(msg) {
+				var i = msg.indexOf(' ');
+				i = i < 0 ? msg.length : i;
+				var cmd = msg.substring(0, i);
+				if (this.hasOwnProperty(cmd)) {
+					for (; i < msg.length && msg[i] == ' '; i++);
+					return this[cmd](msg.substring(i));
+				}
+				return 'Invalid syntax';
+			};
+			
+			var resultParser = {
+				'extData': {},
+				'rhData': {},
+				'currentParams': null,
+				'currentContainer': null,
+
+				'init': function(msg) {
+					var tokens = msg.split(' ');
+					if (tokens.length === 5) {
+						graph.init(parseInt(tokens[0]), parseInt(tokens[1]),
+								parseInt(tokens[2]), parseInt(tokens[3]),
+								parseInt(tokens[4]));
+					} else {
+						return 'Invalid syntax';
+					}
+					return 'Initialization complete';
+				},
+
+				'control': function(msg) {
+					var tokens = msg.split(' ');
+					if (tokens.length === 4) {
+						if (tokens[0] !== 'ext' && tokens[0] !== 'rh') {
+							return 'Unknown access type ' + tokens[0];
+						}
+						this.currentParams = tokens;
+						//$('status').innerHTML += 'Starting test ' + tokens[0]
+						//		+ ' -N ' + tokens[1] + ' -c ' + tokens[2]
+						//		+ ' response size ' + tokens[3] + '<br \>';
+						var container = this[tokens[0] + 'Data'];
+						for (var i = 1; i < 4; i++) {
+							if (!container.hasOwnProperty(tokens[i])) {
+								if (i < 3) {
+									container[tokens[i]] = {};
+								} else {
+									container[tokens[i]] = [];
+								}
+							}
+							container = container[tokens[i]];
+						}
+						this['currentContainer'] = container;
+					} else {
+						return 'Invalid syntax';
+					}
+					return 'Control message received';
+				},
+
+				'end': function(msg) {
+					//$('status').innerHTML += 'Test results: ' + this.currentContainer + '<br />';
+					graph.draw(this.currentParams[0], this.currentParams[1],
+							this.currentParams[2], this.currentParams[3],
+							this.currentContainer);
+					this.currentContainer = null;
+					this.currentParams = null;
+					return 'Control message received';
+				},
+
+				'default': function(msg) {
+					if (!/HTTP.*secs.*/.test(msg)) {
+						return 'Invalid syntax';
+					} else {
+						var value = parseFloat(/([0-9\.])+ secs/.exec(msg)[0]);
+						this.currentContainer.push(value);
+						return 'Result added to the array';
+					}
+				}
+			};
+
+			resultParser.exec = function(msg) {
+				var i = msg.indexOf(' ');
+				i = i < 0 ? msg.length : i;
+				var cmd = msg.substring(0, i);
+				if (this.hasOwnProperty(cmd) && this[cmd] instanceof Function) {
+					for (; i < msg.length && msg[i] === ' '; i++);
+					return this[cmd](msg.substring(i));
+				}
+				return this['default'](msg);
+			}
+
+			var graph = {
+				'WIDTH': 800,
+				'HEIGHT': 600,
+				'gradientColors': [],
+				'maxAvg': 0,
+				'graphs': {
+					'graphTypes': ['avg', 'stdev'],
+					'accessTypes': {
+						'ext': 'Proširenje preglednika',
+						'rh': 'ReverseHTTTP'
+					}
+				},
+				
+				'dStart': 1,
+				'cStart': 1,
+				
+				'init': function(nSize, dSize, cSize, dStart, cStart) {
+					this.dStart = dStart;
+					this.cStart = cStart;
+					var gradient = [[0, 0, 255], [0, 200, 200], [100, 255, 100], [255, 255, 0], [255, 0, 0]];
+					for (var i = 0; i < dSize; i++) {
+						var p = i / (dSize - 1) * (gradient.length - 1);
+						var d = Math.floor(p);
+						var u = Math.ceil(p);
+						var m = p - d;
+						var color = '#';
+						for (var j = 0; j < 3; j++) {
+							var c = Math.round(gradient[d][j] * Math.pow(1 - m, 2) + gradient[u][j] * Math.pow(m, 2)).toString(16);
+							if (c.length === 1)
+								color += '0' + c;
+							else
+								color += c;
+						}
+						this.gradientColors[i] = color;
+					}
+					for (var accessType in this.graphs.accessTypes) {
+						if (this.graphs.accessTypes.hasOwnProperty(accessType)) {
+							this.graphs[accessType] = {};
+							for (var graphType in this.graphs.graphTypes) {
+								if (this.graphs.graphTypes.hasOwnProperty(graphType)) {
+									graphType = this.graphs.graphTypes[graphType];
+									var graph = this.graphs[accessType][graphType] = {
+										data: new google.visualization.DataTable(),
+										element: new google.visualization.LineChart($(accessType + '_' + graphType))
+									};
+									graph.data.addColumn('string', 'Broj konkurentnih zahtjeva');
+									for (var i = 0; i < dSize; i++) {
+										graph.data.addColumn('number', (dStart * Math.pow(2, i) / 1024) + ' kB');
+									}
+									graph.data.addRows(cSize);
+									for (var i = 1; i <= cSize; i++) {
+										graph.data.setValue(i - 1, 0, (cStart * i) + '');
+									}
+								}
+							}
+						}
+					}
+				},
+
+				'_draw': function(accessType, graphType) {
+					this.graphs[accessType][graphType].element.draw(this.graphs[accessType][graphType].data, {
+						width: this.WIDTH, height: this.HEIGHT, title: ((accessType === 'ext') ?
+						'Proširenje' : 'ReverseHTTP'), colors: this.gradientColors,
+						hAxis: {title: 'Broj konkurentnih veza'},
+						vAxis: {
+							title: 'Prosječno trajanje zahtjeva',
+							minValue: 0,
+							maxValue: this.maxAvg
+						},
+						chartArea: {left:100, top:60, width:"75%", height:"80%"}
+					});
+				},
+				
+				'draw': function(accessType, n, c, size, data) {
+					var si = Math.round((Math.log(size / this.dStart) / Math.log(2)));
+					var ci = Math.round((Math.log(c / this.cStart) / Math.log(2)));
+					var avg = data.avg();
+					if (this.maxAvg < avg) {
+						this.maxAvg = avg;
+						for (var at in this.graphs.accessTypes) {
+							if (this.graphs.accessTypes.hasOwnProperty(at) && accessType !== at) {
+								this._draw(at, 'avg');
+							} 
+						}
+					}
+					this.graphs[accessType].avg.data.setValue(ci, si + 1, avg);
+					this._draw(accessType, 'avg');
+					
+
+					/*
+					for (graphType in this.graphs) {
+						if (this.graphs.hasOwnProperty(graphType)) {
+							this.graphs
+						}
+					}
+					*/
+				}
+			};
+
+			app.addResource('measure-control', function(request, response) {
+				response.bodyText = controlHandlers.exec(request.bodyText);
+				response.headers['Content-Length'] = response.bodyText.length ? response.bodyText.length : 0;
+				response.send();
+			});
+
+			app.addResource('measure-results', function(request, response) {
+				response.bodyText = resultParser.exec(request.bodyText);
+				response.headers['Content-Length'] = response.bodyText.length ? response.bodyText.length : 0;
+				response.send();
+			});
+            
+            function onLoad() {
+                transferData.init(transferData.length);
+                
+                $('ess').innerHTML = browserAccessExt.type;
+                $('rhss').innerHTML = browserAccessRevHTTP.type;
+                
+                browserAccessExt.registerApplication('app', app, {
+                    onRegister: function(event) {
+						uris.push(event.data);
+                        $('eData').innerHTML += "Server started at: " + event.data + '<br />';
+                    }
+                });
+                browserAccessRevHTTP.registerApplication('app', app, {
+                    onRegister: function(event) {
+						uris.push(event.data);
+						revHttpWorking = true;
+                        $('rhData').innerHTML += "Server started at: " + event.data + '<br />';
+                    }
+                });
+            }
+        </script>
+        <style>
+            table {
+                border-width: 1px;
+                width: 100%;
+				margin: 0px;
+            }
+            
+            td {
+                border-width: 1px;
+                border-style: solid;
+                border-color: black;
+                margin: 0px;
+            }
+            
+            div {
+                border-width: 1px;
+                border-style: solid;
+                border-color: black;
+                width: 100%;
+                margin: 0px;
+            }
+            
+            textarea {
+                width: 600px;
+                height: 100px;
+            }
+        </style>
+    </head>
+    <body onload="onLoad()">
+        <div id="measureConfig">
+            <table>
+                <tr>
+                    <td id="ess">
+                    </td>
+                    <td id="rhss">
+                    </td>
+                </tr>
+                <tr>
+                    <td id="eData">
+                    </td>
+                    <td id="rhData">
+                    </td>
+                </tr>
+            </table>
+            <div id="status">
+            </div>
+        </div>
+        <div id="graphs">
+			<table>
+				<tr>
+					<td>
+						<div id="ext_avg"></div>
+					</td>
+					<td>
+						<div id="rh_avg"></div>
+					</td>
+				</tr>
+				<tr>
+					<td>
+						<div id="ext_stdev"></div>
+					</td>
+					<td>
+						<div id="rh_stdev"></div>
+					</td>
+				</tr>
+        </div>
+    </body>
+</html>

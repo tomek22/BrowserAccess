@@ -2,6 +2,7 @@ package hr.fer.zemris.revhttp.gateway.websockets.utils;
 
 import hr.fer.zemris.revhttp.gateway.websockets.ProxyServlet;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -10,6 +11,8 @@ import java.util.Map;
 import javax.servlet.http.HttpServletRequest;
 
 public class RevHttpJSON extends HashMap<String, HashMap<String, Object>> {
+
+	private static final int maxStreamBufferSize = 1024;
 
 	private static final long serialVersionUID = 1L;
 
@@ -37,10 +40,14 @@ public class RevHttpJSON extends HashMap<String, HashMap<String, Object>> {
 		revhttp.put("registrationKey", key);
 	}
 
-	public void setRealPrefix(String appName, String protocol,
-			String hostName, int port) {
-		revhttp.put("realPrefix", protocol + "://" + appName + '.'
-				+ hostName + ':' + port);
+	public void setRequestKey(String key) {
+		revhttp.put("requestKey", key);
+	}
+
+	public void setRealPrefix(String appName, String protocol, String hostName,
+			int port) {
+		revhttp.put("realPrefix", protocol + "://" + appName + '.' + hostName
+				+ ':' + port);
 	}
 
 	public void setAppName(String appName) {
@@ -55,20 +62,33 @@ public class RevHttpJSON extends HashMap<String, HashMap<String, Object>> {
 		revhttp.put(key, value);
 	}
 
-	public void setRequest(String requestId) {
+	public void setRequest(String requestId) throws IOException {
 		HttpServletRequest request = ProxyServlet.requestMap.get(requestId);
 		StringBuilder body = new StringBuilder();
 
-		try {
-			String line = null;
-			while ((line = request.getReader().readLine()) != null)
-				body.append(line);
-		} catch (IOException ignorable) {
+		HashMap<String, Object> requestObject = new HashMap<String, Object>();
+
+		int contentLength = request.getContentLength();
+
+		if (contentLength > 0) {
+			BufferedReader bbr = request.getReader();
+	
+			int bufferSize = (contentLength < this.maxStreamBufferSize) ? contentLength : this.maxStreamBufferSize;
+	
+			char[] buffer = new char[bufferSize];
+	
+			int rc;
+			do {
+				rc = bbr.read(buffer);
+				if (rc > 0)
+					body.append(buffer, 0, rc);
+			} while (rc == bufferSize);
+	
+			requestObject.put("body", body.toString());
+		} else {
+			requestObject.put("body", "");
 		}
 
-		HashMap<String, Object> requestObject = new HashMap<String, Object>();
-		requestObject.put("body", body.toString());
-		
 		HashMap<String, String> headers = new HashMap<String, String>();
 		Enumeration<?> headerNames = request.getHeaderNames();
 		while (headerNames.hasMoreElements()) {
@@ -82,8 +102,17 @@ public class RevHttpJSON extends HashMap<String, HashMap<String, Object>> {
 		requestObject.put("queryString", queryString);
 		requestObject.put("method", request.getMethod());
 		requestObject.put("resourcePath", request.getPathInfo());
-		
 		revhttp.put("request", requestObject);
+
+		try {
+			String line = null;
+			BufferedReader reader = request.getReader();
+			while ((line = reader.readLine()) != null)
+				body.append(line);
+		} catch (Exception e) {
+			System.err.println("Request body read failed!");
+		}
+
 	}
 
 	@SuppressWarnings("rawtypes")

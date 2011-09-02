@@ -2,36 +2,58 @@ package hr.fer.zemris.revhttp.gateway.resources;
 
 import hr.fer.zemris.revhttp.gateway.websockets.ServerInterfaceServlet.ServerInterfaceSocket;
 
-import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.LinkedList;
 import java.util.Map;
 
 public class GatewayResources {
-	private static final Map<String, String> resourceUUIDs = new HashMap<String, String>();
-	private static final Map<String, ServerInterfaceSocket> resourceSockets = new HashMap<String, ServerInterfaceSocket>();
-	private static final Map<ServerInterfaceSocket, LinkedList<String>> socketResources = new HashMap<ServerInterfaceSocket, LinkedList<String>>();
+	private static final Map<String, String> resourceUUIDs = new Hashtable<String, String>();
+	private static final Map<String, String> UUIDResources = new Hashtable<String, String>();
+	private static final Map<String, ServerInterfaceSocket> resourceSockets = new Hashtable<String, ServerInterfaceSocket>();
+	private static final Map<ServerInterfaceSocket, LinkedList<String>> socketResources = new Hashtable<ServerInterfaceSocket, LinkedList<String>>();
 
 	/**
 	 * @param appName
+	 * @param variation
+	 *            specify max variation index if appName is taken
 	 * @return uuid of the registered domain if it doesn't exist yet, null
 	 *         otherwise
 	 */
-	public static String registerApplication(String appName) {
+	public static String registerApplication(String appName, Long variation) {
 		appName = appName.toLowerCase();
-		if (resourceUUIDs.containsKey(appName))
-			return null;
+		if (resourceUUIDs.containsKey(appName)) {
+			if (variation != null) {
+				variation = variation > 0 ? variation : Long.MAX_VALUE;
+				int i = 1;
+				for (; i <= variation && resourceUUIDs.containsKey(appName + i); i++)
+					;
+				if (i >= variation)
+					return null;
+				else
+					appName += i;
+			} else
+				return null;
+		}
 		String uuid = generateUUID();
 		resourceUUIDs.put(appName, uuid);
+		UUIDResources.put(uuid, appName);
 		return uuid;
 	}
 
 	public static void unregisterApplication(String appName) {
-		if (resourceUUIDs.containsKey(appName))
+		if (resourceUUIDs.containsKey(appName)) {
+			String uuid = resourceUUIDs.get(appName);
 			resourceUUIDs.remove(appName);
+			UUIDResources.remove(uuid);
+		}
 	}
 
 	public static String getResourceUUID(String regex) {
 		return resourceUUIDs.get(regex);
+	}
+
+	public static String getUUIDResource(String uuid) {
+		return UUIDResources.get(uuid);
 	}
 
 	/**

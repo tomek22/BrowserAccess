@@ -41,8 +41,7 @@ public class GatewayRunner {
 			try {
 				server = new Server(port);
 				GatewayRunner.port = port;
-				// JettyControlGUI.initGUI(server,
-				// "ReverseHTTP Server");
+				// JettyControlGUI.initGUI(server, "ReverseHTTP Server");
 			} catch (Exception e) {
 				System.err.println("Server could not be started! Stack trace: ");
 				e.printStackTrace();
@@ -101,7 +100,7 @@ public class GatewayRunner {
 				final Request baseRequest,
 				final HttpServletResponse response) throws IOException,
 				ServletException {
-			if (!"WebSocket".equals(baseRequest.getHeader("Upgrade")))
+			if (!"websocket".equalsIgnoreCase(baseRequest.getHeader("Upgrade")))
 				return false;
 			return super.checkContext(target, baseRequest, response);
 		}

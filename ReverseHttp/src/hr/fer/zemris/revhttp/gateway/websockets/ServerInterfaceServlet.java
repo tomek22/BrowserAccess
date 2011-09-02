@@ -23,14 +23,21 @@ public class ServerInterfaceServlet extends WebSocketServlet {
 	private Set<WebSocket> connections = new HashSet<WebSocket>();
 
 	@Override
-	protected WebSocket doWebSocketConnect(HttpServletRequest request,
+	public WebSocket doWebSocketConnect(HttpServletRequest request,
 			String protocol) {
 		return new ServerInterfaceSocket(request);
 	}
+	
+	@Override
+	public String getInitParameter(String name) {
+		if (name.equals("bufferSize"))
+			return "263000";
+		return super.getInitParameter(name);
+	}
 
-	public class ServerInterfaceSocket implements WebSocket {
+	public class ServerInterfaceSocket implements WebSocket.OnTextMessage {
 
-		private Outbound outbound;
+		private Connection outbound;
 		private String serverProtocol = null;
 		private String serverName = null;
 		private int serverPort;
@@ -56,33 +63,32 @@ public class ServerInterfaceServlet extends WebSocketServlet {
 		}
 
 		@Override
-		public void onConnect(Outbound outbound) {
+		public void onOpen(Connection outbound) {
 			this.outbound = outbound;
 			connections.add(this);
 		}
 
 		@Override
-		public void onDisconnect() {
+		public void onClose(int closeCode, String message) {
+//			System.out.println("disconnect");
 			GatewayResources.deleteSocket(this);
 			connections.remove(this);
 		}
 
 		@Override
-		public void onMessage(byte frame, String data) {
+		public void onMessage(String data) {
+//			System.out.println(outbound.hashCode());
+//			System.out.println("rec: " + data);
 			Object responseObj = RequestHandler.parseRequest(
 					JSON.parse(data), this);
 			if (responseObj != null)
 				try {
 					String response = JSON.toString(responseObj);
-					outbound.sendMessage(frame, response);
+//					System.out.println("sent: " + response);
+					outbound.sendMessage(response);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
-		}
-
-		@Override
-		public void onMessage(byte frame, byte[] data, int offset,
-				int length) {
 		}
 
 		public void relayRequest(String requestId, String appName) {
@@ -95,15 +101,10 @@ public class ServerInterfaceServlet extends WebSocketServlet {
 				result.setRealPrefix(appName, serverProtocol, serverName,
 						serverPort);
 				result.setRequest(requestId);
-				outbound.sendMessage((byte) 0, JSON.toString(result));
+				outbound.sendMessage(JSON.toString(result));
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
-		}
-
-		@Override
-		public void onFragment(boolean arg0, byte arg1, byte[] arg2,
-				int arg3, int arg4) {
 		}
 	}
 }
