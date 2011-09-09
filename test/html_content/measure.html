@@ -31,6 +31,16 @@
 				return av/cnt;
 			}
 
+			Array.prototype.stdev = function() {
+				var avg = this.avg();
+				var len = this.length;
+				var sum = 0;
+				for (var i = 0; i < len; i++) {
+					sum += Math.pow(this[i] - avg, 2);
+				}
+				return Math.sqrt(sum / len);
+			}
+
             var browserAccessExt = new BrowserAccess(false);
             var browserAccessRevHTTP = new BrowserAccess(true);
 			
@@ -77,7 +87,7 @@
 				},
 				
 				'ready': function(msg) {
-					if (browserAccessExt.type === AccessType.SERVER_EXTENSION && browserAccessRevHTTP.type === AccessType.REVERSE_HTTP && revHttpWorking) {
+					if (browserAccessRevHTTP.type === AccessType.REVERSE_HTTP && revHttpWorking) {
 						$('status').innerHTML += 'Ready to start tests...<br \>';
 						return 'true';
 					}
@@ -135,16 +145,16 @@
 						//		+ ' response size ' + tokens[3] + '<br \>';
 						var container = this[tokens[0] + 'Data'];
 						for (var i = 1; i < 4; i++) {
-							if (!container.hasOwnProperty(tokens[i])) {
-								if (i < 3) {
+							if (!container.hasOwnProperty(tokens[i]) && i < 3) {
 									container[tokens[i]] = {};
-								} else {
-									container[tokens[i]] = [];
-								}
+								
+							}
+							if (i === 3) {
+								container[tokens[i]] = [];
 							}
 							container = container[tokens[i]];
 						}
-						this['currentContainer'] = container;
+						this.currentContainer = container;
 					} else {
 						return 'Invalid syntax';
 					}
@@ -153,6 +163,19 @@
 
 				'end': function(msg) {
 					//$('status').innerHTML += 'Test results: ' + this.currentContainer + '<br />';
+					var expectedSize = this.currentParams[1] * this.currentParams[2];
+					if (this.currentContainer.length !== expectedSize) {
+						$('status').innerHTML += this.currentParams[0] +
+							', N=' + this.currentParams[1] + ', c=' +
+							this.currentParams[2] + ', size=' + this.currentParams[3] +
+							': expected ' + expectedSize + ' results, got ' +
+							this.currentContainer.length + ', Repeating test...<br \>';
+							if (this.currentContainer.length === 0) {
+								HttpServer.unrequestUsage(window);
+								HttpServer.requestUsage(window);
+							}
+							return 'fail';
+					}
 					graph.draw(this.currentParams[0], this.currentParams[1],
 							this.currentParams[2], this.currentParams[3],
 							this.currentContainer);
@@ -188,6 +211,7 @@
 				'HEIGHT': 600,
 				'gradientColors': [],
 				'maxAvg': 0,
+				'maxStdev': 0,
 				'graphs': {
 					'graphTypes': ['avg', 'stdev'],
 					'accessTypes': {
@@ -218,6 +242,22 @@
 						}
 						this.gradientColors[i] = color;
 					}
+					function addExportSVG(id) {
+						app.addResource(id + '.svg', function(request, response) {
+							var content = '<?xml version="1.0" encoding="UTF-8"?>' +
+								'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">' +
+								$(id).getElementsByTagName('iframe')[0].contentDocument.getElementById('chartArea').innerHTML;
+							response.bodyText = content;
+							response.headers['Content-Type'] = 'image/svg;charset=UTF-8';
+							response.headers['Content-Length'] = content.length + 2;
+							response.send();
+						});
+						$(id + '_save').addEventListener('click',
+							function(e) {
+								window.open('http://app.localhost:8080/' + id + '.svg');
+							}
+						);
+					}
 					for (var accessType in this.graphs.accessTypes) {
 						if (this.graphs.accessTypes.hasOwnProperty(accessType)) {
 							this.graphs[accessType] = {};
@@ -228,13 +268,15 @@
 										data: new google.visualization.DataTable(),
 										element: new google.visualization.LineChart($(accessType + '_' + graphType))
 									};
+									var id = accessType + '_' + graphType;
+									addExportSVG(id);
 									graph.data.addColumn('string', 'Broj konkurentnih zahtjeva');
 									for (var i = 0; i < dSize; i++) {
 										graph.data.addColumn('number', (dStart * Math.pow(2, i) / 1024) + ' kB');
 									}
-									graph.data.addRows(cSize);
-									for (var i = 1; i <= cSize; i++) {
-										graph.data.setValue(i - 1, 0, (cStart * i) + '');
+									graph.data.addRows(cSize + 1);
+									for (var i = 0; i <= cSize; i++) {
+										graph.data.setValue(i, 0, Math.max((cStart * i), 1) + '');
 									}
 								}
 							}
@@ -248,18 +290,19 @@
 						'Proširenje' : 'ReverseHTTP'), colors: this.gradientColors,
 						hAxis: {title: 'Broj konkurentnih veza'},
 						vAxis: {
-							title: 'Prosječno trajanje zahtjeva',
+							title: (graphType === 'avg') ? 'Prosječno trajanje zahtjeva (s)' : 'Standardna devijacija (s)',
 							minValue: 0,
-							maxValue: this.maxAvg
+							maxValue: (graphType === 'avg') ? this.maxAvg : this.maxStdev
 						},
 						chartArea: {left:100, top:60, width:"75%", height:"80%"}
 					});
 				},
 				
 				'draw': function(accessType, n, c, size, data) {
-					var si = Math.round((Math.log(size / this.dStart) / Math.log(2)));
-					var ci = Math.round((Math.log(c / this.cStart) / Math.log(2)));
+					var si = Math.round((Math.log(size / this.dStart) / Math.log(2))) + 1;
+					var ci = Math.round(c / this.cStart);
 					var avg = data.avg();
+					var stdev = data.stdev();
 					if (this.maxAvg < avg) {
 						this.maxAvg = avg;
 						for (var at in this.graphs.accessTypes) {
@@ -268,17 +311,18 @@
 							} 
 						}
 					}
-					this.graphs[accessType].avg.data.setValue(ci, si + 1, avg);
-					this._draw(accessType, 'avg');
-					
-
-					/*
-					for (graphType in this.graphs) {
-						if (this.graphs.hasOwnProperty(graphType)) {
-							this.graphs
+					if (this.maxStdev < stdev) {
+						this.maxStdev = stdev;
+						for (var at in this.graphs.accessTypes) {
+							if (this.graphs.accessTypes.hasOwnProperty(at) && accessType !== at) {
+								this._draw(at, 'stdev');
+							} 
 						}
 					}
-					*/
+					this.graphs[accessType].avg.data.setValue(ci, si, avg);
+					this.graphs[accessType].stdev.data.setValue(ci, si, stdev);
+					this._draw(accessType, 'avg');
+					this._draw(accessType, 'stdev');
 				}
 			};
 
@@ -373,12 +417,20 @@
 					</td>
 				</tr>
 				<tr>
+					<td><button id="ext_avg_save">Save as SVG</button></td>
+					<td><button id="rh_avg_save">Save as SVG</button></td>
+				</tr>
+				<tr>
 					<td>
 						<div id="ext_stdev"></div>
 					</td>
 					<td>
 						<div id="rh_stdev"></div>
 					</td>
+				</tr>
+				<tr>
+					<td><button id="ext_stdev_save">Save as SVG</button></td>
+					<td><button id="rh_stdev_save">Save as SVG</button></td>
 				</tr>
         </div>
     </body>

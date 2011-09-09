@@ -13,7 +13,7 @@ CLIENT=$1
 STARTSIZE=1024
 STARTCONCURRENT=100
 I=1
-J=9
+J=8
 K=10
 
 function post {
@@ -40,21 +40,23 @@ fi
 if [ $# > 0 ] ; then
 	./run_all.sh &
 	`$CLIENT $TEST_HOST:$PORT_TEST/measure.html > /dev/null 2>&1&`
-	sleep 1
+	sleep 3
 	control "ready"
 	if [[ $response = "true" ]]; then
-		#just to warm up...
-		`siege -r 5 -c 5 $APP_HOST:$PORT_EXT 2>/dev/null`"
-		`siege -r 5 -c 5 $APP_HOST:$PORT_RH 2>/dev/null`"
+		#warmup...
+		siege -r 2 -c 2 $APP_HOST:$PORT_EXT 2>/dev/null >/dev/null
+		siege -r 2 -c 2 $APP_HOST:$PORT_RH 2>/dev/null >/dev/null
 		echo "Starting tests..."
 		result "init $I $J $K $STARTSIZE $STARTCONCURRENT"
 		for ((N=1;N<=$I;N++)); do
 			for ((j=0;j<$J;j++)); do
 				size=$(( 2**$j * $STARTSIZE ))
-				echo "Setting response size to $size bytes"
 				control "set-response-size $size"
-				for ((k=1;k<=$K;k++)); do
+				for ((k=0;k<=$K;k++)); do
 					C=$(( $k * $STARTCONCURRENT));
+					if [ $C = 0 ]; then
+						C=1
+					fi
 					result "control ext $N $C $size"
 					IFS=$'\n'
 					lines="`siege -r $N -c $C $APP_HOST:$PORT_EXT 2>/dev/null`"
@@ -62,12 +64,20 @@ if [ $# > 0 ] ; then
 						result "$line"
 					done
 					result "end"
+					if [[ $response = "fail" ]]; then
+						k=$k-1
+						continue
+					fi
 					result "control rh $N $C $size"
 					lines="`siege -r $N -c $C $APP_HOST:$PORT_RH 2>/dev/null`"
 					for line in $lines; do
 						result "$line"
 					done
 					result "end"
+					if [[ $response = "fail" ]]; then
+						k=$k-1
+						continue
+					fi
 					unset IFS
 				done
 			done
